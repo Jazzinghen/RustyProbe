@@ -1,0 +1,19 @@
+[package]
+name = "rusty_probe"
+authors = ["Michele Bianchi <jazzinghen@gmail.com>"]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "An MSP430 disassembler heavily inspired by MSProbe"
+categories = ["parser-implementations", "development-tools"]
+keywords = ["microcorruption", "msp430", "disassembler"]
+
+[profile.release]
+strip = true
+
+[profile.test]
+strip = true
+
+[dependencies]
+clap = {version = ">=3.2", features = ["derive", "unicode"]}
+indicatif = ">=0.16"
