@@ -16,4 +16,5 @@ strip = true
 
 [dependencies]
 clap = {version = ">=3.2", features = ["derive", "unicode"]}
+itertools = ">=0.10.3"
 indicatif = ">=0.16"
