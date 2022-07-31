@@ -1,8 +1,6 @@
 use itertools::Itertools;
-use std::{
-    io::{self, Read},
-    ops::Shl,
-};
+use std::io::{self, Read};
+use std::ops::Shl;
 
 pub fn disassemble(
     reader: &mut Box<dyn Read + 'static>,

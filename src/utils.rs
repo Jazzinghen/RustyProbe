@@ -1,6 +1,6 @@
 use std::convert::{From, TryFrom};
 use std::fmt;
-use std::ops::{Shl, Shr};
+use std::ops::{Add, Shl, Shr};
 
 // Jumps
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -257,11 +257,10 @@ pub enum Register {
 impl TryFrom<u16> for Register {
     type Error = &'static str;
     fn try_from(value: u16) -> Result<Self, Self::Error> {
-        let op_data: u16 = value.shr(12);
-        if op_data == 0b0001 {
-            return Err("the provided word is not a two operand op code");
+        if value >= 0b10000 {
+            return Err("the provided value is not a register identifier");
         }
-        match op_data {
+        match value {
             0b0000 => Ok(Self::Pc),
             0b0001 => Ok(Self::Sp),
             0b0010 => Ok(Self::Sr),
@@ -278,14 +277,14 @@ impl TryFrom<u16> for Register {
             0b1101 => Ok(Self::R13),
             0b1110 => Ok(Self::R14),
             0b1111 => Ok(Self::R15),
-            _ => Err("inexisting operation"),
+            _ => Err("inexisting register"),
         }
     }
 }
 
 impl From<Register> for u16 {
     fn from(val: Register) -> Self {
-        let op_bits = match val {
+        match val {
             Register::Pc => 0b0000u16,
             Register::Sp => 0b0001u16,
             Register::Sr => 0b0010u16,
@@ -302,8 +301,7 @@ impl From<Register> for u16 {
             Register::R13 => 0b1101u16,
             Register::R14 => 0b1110u16,
             Register::R15 => 0b1111u16,
-        };
-        op_bits.shl(12)
+        }
     }
 }
 
@@ -340,66 +338,283 @@ impl fmt::Display for Register {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AddresingMode {
     Direct(Register),
-    Indexed((i16, Register)),
+    Indexed((u16, Register)),
     Indirect(Register),
     Autoincrement(Register),
     Absolute(u16),
-    Symbolic(i16),
-    Immediate(i16),
+    Symbolic(u16),
+    Immediate(u16),
+}
+
+fn get_signed_hex(src: u16) -> String {
+    let signed = src as i16;
+    let abs = signed.abs() as u16;
+    let sign = if signed < 0 { "-" } else { "" };
+    format!("{}{:+#x}", sign, abs)
 }
 
 impl fmt::Display for AddresingMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Self::Direct(reg) => write!(f, "{}", String::from(reg)),
-            Self::Indexed((offset, reg)) => write!(f, "{:+#x}({})", offset, String::from(reg)),
+            Self::Indexed((offset, reg)) => {
+                write!(f, "{}({})", get_signed_hex(offset), String::from(reg))
+            }
             Self::Indirect(reg) => write!(f, "@{}", String::from(reg)),
             Self::Autoincrement(reg) => write!(f, "@{}+", String::from(reg)),
             Self::Absolute(address) => write!(f, "&{:#x}", address),
-            Self::Symbolic(offset) => write!(f, "{:+#x}", offset),
-            Self::Immediate(value) => write!(f, "#{}", value),
+            Self::Symbolic(offset) => write!(f, "{}", get_signed_hex(offset)),
+            Self::Immediate(value) => write!(f, "#{}", value as i16),
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DataMode {
     Byte,
     Word,
 }
 
-impl fmt::Display for DataMode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
-            Self::Byte => write!(f, ".b"),
-            Self::Word => write!(f, ".w"),
+impl From<u16> for DataMode {
+    fn from(value: u16) -> Self {
+        let size_data = value & 0b1000000u16;
+        if size_data == 0 {
+            Self::Word
+        } else {
+            Self::Byte
         }
     }
 }
 
+impl From<DataMode> for u16 {
+    fn from(val: DataMode) -> Self {
+        if val == DataMode::Byte {
+            0b1000000u16
+        } else {
+            0u16
+        }
+    }
+}
+
+impl From<DataMode> for String {
+    fn from(val: DataMode) -> Self {
+        if val == DataMode::Word {
+            String::from(".w")
+        } else {
+            String::from(".b")
+        }
+    }
+}
+
+impl fmt::Display for DataMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", String::from(*self))
+    }
+}
+
+#[derive(Debug)]
+pub enum EmulatedOp {
+    Ret,
+    Clrc,
+    Setc,
+    Clrz,
+    Setz,
+    Clrn,
+    Setn,
+    Dint,
+    Eint,
+    Nop,
+    Br,
+    Pop,
+    Push,
+    Rla,
+    Rlc,
+    Inv,
+    Clr,
+    Tst,
+    Dec,
+    Decd,
+    Inc,
+    Incd,
+    Adc,
+    Dadc,
+    Sbc,
+}
+
+pub trait AsmInstruction {}
+
 #[derive(Debug)]
 pub struct JumpInstruction {
     operation: JumpOp,
-    offset: i16,
+    offset: u16,
 }
+
+impl JumpInstruction {
+    fn new(word: u16) -> Self {
+        let operation = JumpOp::try_from(word).unwrap();
+        let offset_bits = word & 0b1111111111u16;
+        let offset = if offset_bits & 0b1000000000u16 != 0 {
+            offset_bits + 0b111111u16.shl(10)
+        } else {
+            offset_bits
+        };
+
+        Self { operation, offset }
+    }
+}
+
+impl AsmInstruction for JumpInstruction {}
 
 impl fmt::Display for JumpInstruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "({}, {})", self.operation, self.offset)
+        write!(f, "({}, {})", self.operation, get_signed_hex(self.offset))
     }
+}
+
+fn parse_address(
+    register: Register,
+    addr_bits: u16,
+    raw_words: &[u16; 3],
+) -> Result<(AddresingMode, bool), &'static str> {
+    let mut extra_word_used = false;
+
+    let mode = match addr_bits {
+        0b00 => {
+            if register == Register::Cg {
+                AddresingMode::Immediate(0)
+            } else {
+                AddresingMode::Direct(register)
+            }
+        }
+        0b01 => match register {
+            Register::Pc => {
+                extra_word_used = true;
+                AddresingMode::Symbolic(raw_words[1])
+            }
+            Register::Sr => {
+                extra_word_used = true;
+                AddresingMode::Absolute(raw_words[1])
+            }
+            Register::Cg => AddresingMode::Immediate(1),
+            _ => {
+                extra_word_used = true;
+                AddresingMode::Indexed((raw_words[1], register))
+            }
+        },
+        0b10 => match register {
+            Register::Sr => AddresingMode::Immediate(4),
+            Register::Cg => AddresingMode::Immediate(2),
+            _ => AddresingMode::Indirect(register),
+        },
+        0b11 => match register {
+            Register::Pc => {
+                extra_word_used = true;
+                AddresingMode::Immediate(raw_words[1])
+            }
+            Register::Sr => AddresingMode::Immediate(8),
+            Register::Cg => AddresingMode::Immediate(-1i16 as u16),
+            _ => AddresingMode::Autoincrement(register),
+        },
+        _ => return Err("provided an invalid addressing mode value"),
+    };
+
+    Ok((mode, extra_word_used))
 }
 
 #[derive(Debug)]
 pub struct OneOpInstruction {
     operation: OneOp,
-    data: Option<AddresingMode>,
-    mode: Option<AddresingMode>,
+    data: AddresingMode,
+    mode: Option<DataMode>,
+}
+
+impl AsmInstruction for OneOpInstruction {}
+
+impl OneOpInstruction {
+    pub fn new(raw_words: &[u16; 3]) -> (Self, bool) {
+        let operation = OneOp::try_from(raw_words[0]).unwrap();
+        let mode = if operation == OneOp::Rrc || operation == OneOp::Rra || operation == OneOp::Push
+        {
+            Some(DataMode::from(raw_words[0]))
+        } else {
+            None
+        };
+
+        let data_register = Register::try_from(raw_words[0] & 0b1111u16).unwrap();
+        let addr_mode_bits = raw_words[0].shr(4) & 0b11u16;
+        let (data, word_used) = parse_address(data_register, addr_mode_bits, raw_words).unwrap();
+
+        (
+            Self {
+                operation,
+                data,
+                mode,
+            },
+            word_used,
+        )
+    }
 }
 
 #[derive(Debug)]
 pub struct TwoOpInstruction {
     operation: TwoOp,
-    source: Option<AddresingMode>,
-    destination: Option<AddresingMode>,
-    mode: Option<AddresingMode>,
+    source: AddresingMode,
+    destination: AddresingMode,
+    mode: DataMode,
+}
+
+impl AsmInstruction for TwoOpInstruction {}
+
+impl TwoOpInstruction {
+    pub fn new(raw_words: &[u16; 3]) -> (Self, u8) {
+        let operation = TwoOp::try_from(raw_words[0]).unwrap();
+        let (source, destination, extra_words) = Self::parse_address(raw_words);
+        let mode = DataMode::from(raw_words[0]);
+
+        (
+            Self {
+                operation,
+                source,
+                destination,
+                mode,
+            },
+            extra_words,
+        )
+    }
+
+    fn parse_address(raw_words: &[u16; 3]) -> (AddresingMode, AddresingMode, u8) {
+        let src_addressing_bits = raw_words[0].shr(4) & 0b11u16;
+        let src_register_bits = raw_words[0].shr(7) & 0b1111u16;
+        let src_register = Register::try_from(src_register_bits).unwrap();
+
+        let (src_mode, first_extra_word_used) =
+            parse_address(src_register, src_addressing_bits, raw_words).unwrap();
+
+        let mut extra_words_used = if first_extra_word_used { 1u8 } else { 0u8 };
+
+        let dst_addressing_bit = raw_words[0] & 0b10000000u16;
+        let dst_register_bits = raw_words[0] & 0b1111u16;
+        let dst_register = Register::try_from(dst_register_bits).unwrap();
+
+        let dst_mode = if dst_addressing_bit == 0 {
+            AddresingMode::Direct(dst_register)
+        } else {
+            let offset = raw_words[1 + usize::from(extra_words_used)];
+            extra_words_used += 1;
+            match dst_register {
+                Register::Pc => AddresingMode::Symbolic(offset),
+                Register::Sr => AddresingMode::Absolute(offset),
+                _ => AddresingMode::Indexed((offset, dst_register)),
+            }
+        };
+
+        (src_mode, dst_mode, extra_words_used)
+    }
+}
+
+#[derive(Debug)]
+enum Instruction {
+    Jump(JumpInstruction),
+    OneOp(OneOpInstruction),
+    TwoOp(TwoOpInstruction),
 }
