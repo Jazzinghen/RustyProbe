@@ -1,3 +1,5 @@
 # RustyProbe
 
-An MSP430 disassembler heavily inspired by MSProbe
+An MSP430 disassembler inspired by [MSProbe][1]
+
+[1]: https://github.com/Swiftloke/MSProbe
