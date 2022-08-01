@@ -1,3 +1,6 @@
+use std::fs::File;
+use std::io::prelude::*;
+use std::io::BufReader;
 use std::num::ParseIntError;
 use std::path::PathBuf;
 
@@ -52,7 +55,7 @@ struct DisassembleConfig {
     file_path: Option<PathBuf>,
 
     #[clap(long, parse(try_from_str=from_dec_or_hex), requires = "stack", value_name = "SP_BASE")]
-    stack_begin: u16,
+    stack_begin: Option<u16>,
 
     #[clap(long, parse(try_from_str=from_dec_or_hex), group = "stack", value_name = "SP_END")]
     stack_end: Option<u16>,
@@ -86,5 +89,19 @@ fn from_dec_or_hex(s: &str) -> Result<u16, ParseIntError> {
 fn main() {
     let user_configs = Cli::parse();
 
-    println!("Config: {:?}", user_configs);
+    if let Mode::Disassemble(config) = user_configs.mode {
+        if let Some(input) = config.file_path {
+            let f = File::open(input).unwrap();
+            let mut reader = BufReader::new(f);
+
+            let disassembled = disassembler::disassemble(
+                &mut reader,
+                user_configs.base_pointer,
+                user_configs.quiet,
+            )
+            .unwrap();
+        };
+    }
+
+    println!("Done");
 }

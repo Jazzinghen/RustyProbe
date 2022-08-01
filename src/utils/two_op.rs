@@ -22,11 +22,11 @@ pub enum TwoOp {
 }
 
 impl TryFrom<u16> for TwoOp {
-    type Error = &'static str;
+    type Error = String;
     fn try_from(value: u16) -> Result<Self, Self::Error> {
         let op_data: u16 = value.shr(12);
         if op_data == 0b0001 {
-            return Err("the provided word is not a two operand op code");
+            return Err("the provided word is not a two operand op code".to_string());
         }
         match op_data {
             0b0100 => Ok(Self::Mov),
@@ -41,7 +41,10 @@ impl TryFrom<u16> for TwoOp {
             0b1101 => Ok(Self::Bis),
             0b1110 => Ok(Self::Xor),
             0b1111 => Ok(Self::And),
-            _ => Err("inexisting operation"),
+            _ => Err(format!(
+                "inexisting operation, I was given: {:#b} from word: {:#x}",
+                op_data, value
+            )),
         }
     }
 }
@@ -92,7 +95,7 @@ impl fmt::Display for TwoOp {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum EmulatedOp {
     Ret,
     Clrc,
@@ -120,6 +123,44 @@ pub enum EmulatedOp {
     Sbc,
 }
 
+impl From<EmulatedOp> for String {
+    fn from(val: EmulatedOp) -> Self {
+        match val {
+            EmulatedOp::Ret => "ret",
+            EmulatedOp::Clrc => "clrc",
+            EmulatedOp::Setc => "setc",
+            EmulatedOp::Clrz => "clrz",
+            EmulatedOp::Setz => "setz",
+            EmulatedOp::Clrn => "clrn",
+            EmulatedOp::Setn => "setn",
+            EmulatedOp::Dint => "dint",
+            EmulatedOp::Eint => "eint",
+            EmulatedOp::Nop => "nop",
+            EmulatedOp::Br => "br",
+            EmulatedOp::Pop => "pop",
+            EmulatedOp::Rla => "rla",
+            EmulatedOp::Rlc => "rlc",
+            EmulatedOp::Inv => "inv",
+            EmulatedOp::Clr => "clr",
+            EmulatedOp::Tst => "tst",
+            EmulatedOp::Dec => "dec",
+            EmulatedOp::Decd => "decd",
+            EmulatedOp::Inc => "inc",
+            EmulatedOp::Incd => "incd",
+            EmulatedOp::Adc => "adc",
+            EmulatedOp::Dadc => "dadc",
+            EmulatedOp::Sbc => "sbc",
+        }
+        .to_string()
+    }
+}
+
+impl fmt::Display for EmulatedOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", String::from(*self))
+    }
+}
+
 #[derive(Debug)]
 pub struct TwoOpInstruction {
     operation: TwoOp,
@@ -131,9 +172,9 @@ pub struct TwoOpInstruction {
 impl AsmInstruction for TwoOpInstruction {}
 
 impl TwoOpInstruction {
-    pub fn new(raw_words: &[u16; 3]) -> (Self, u8) {
+    pub fn new(raw_words: &[u16]) -> (Self, u8) {
         let operation = TwoOp::try_from(raw_words[0]).unwrap();
-        let (source, destination, extra_words) = Self::parse_address(raw_words);
+        let (source, destination, extra_words) = Self::parse_src_dst(raw_words);
         let mode = DataMode::from(raw_words[0]);
 
         (
@@ -147,9 +188,9 @@ impl TwoOpInstruction {
         )
     }
 
-    fn parse_address(raw_words: &[u16; 3]) -> (AddresingMode, AddresingMode, u8) {
+    fn parse_src_dst(raw_words: &[u16]) -> (AddresingMode, AddresingMode, u8) {
         let src_addressing_bits = raw_words[0].shr(4) & 0b11u16;
-        let src_register_bits = raw_words[0].shr(7) & 0b1111u16;
+        let src_register_bits = raw_words[0].shr(8) & 0b1111u16;
         let src_register = Register::try_from(src_register_bits).unwrap();
 
         let (src_mode, first_extra_word_used) =
@@ -176,7 +217,7 @@ impl TwoOpInstruction {
         (src_mode, dst_mode, extra_words_used)
     }
 
-    fn emulated_form(&self) -> Option<EmulatedInstruction> {
+    pub fn emulated_form(&self) -> Option<EmulatedInstruction> {
         match self.operation {
             TwoOp::Mov => {
                 if self.source == self.destination {
@@ -186,7 +227,7 @@ impl TwoOpInstruction {
                         mode: None,
                     });
                 }
-                if self.source == AddresingMode::Indirect(Register::Sp) {
+                if self.source == AddresingMode::Autoincrement(Register::Sp) {
                     if self.destination == AddresingMode::Direct(Register::Pc) {
                         return Some(EmulatedInstruction {
                             operation: EmulatedOp::Ret,
@@ -284,14 +325,14 @@ impl TwoOpInstruction {
                         mode: Some(self.mode),
                     });
                 }
-                if let AddresingMode::Absolute(amount) = self.source {
+                if let AddresingMode::Immediate(amount) = self.source {
                     if amount == 1 {
                         return Some(EmulatedInstruction {
                             operation: EmulatedOp::Inc,
                             data: Some(self.destination),
                             mode: Some(self.mode),
                         });
-                    } else {
+                    } else if amount == 2 {
                         return Some(EmulatedInstruction {
                             operation: EmulatedOp::Incd,
                             data: Some(self.destination),
@@ -308,7 +349,7 @@ impl TwoOpInstruction {
                         mode: Some(self.mode),
                     });
                 }
-                if self.source == AddresingMode::Absolute(0) {
+                if self.source == AddresingMode::Immediate(0) {
                     return Some(EmulatedInstruction {
                         operation: EmulatedOp::Adc,
                         data: Some(self.destination),
@@ -317,14 +358,14 @@ impl TwoOpInstruction {
                 }
             }
             TwoOp::Sub => {
-                if let AddresingMode::Absolute(amount) = self.source {
+                if let AddresingMode::Immediate(amount) = self.source {
                     if amount == 1 {
                         return Some(EmulatedInstruction {
                             operation: EmulatedOp::Dec,
                             data: Some(self.destination),
                             mode: Some(self.mode),
                         });
-                    } else {
+                    } else if amount == 2 {
                         return Some(EmulatedInstruction {
                             operation: EmulatedOp::Decd,
                             data: Some(self.destination),
@@ -334,7 +375,7 @@ impl TwoOpInstruction {
                 }
             }
             TwoOp::Subc => {
-                if self.source == AddresingMode::Absolute(0) {
+                if self.source == AddresingMode::Immediate(0) {
                     return Some(EmulatedInstruction {
                         operation: EmulatedOp::Sbc,
                         data: Some(self.destination),
@@ -343,7 +384,7 @@ impl TwoOpInstruction {
                 }
             }
             TwoOp::Dadd => {
-                if self.source == AddresingMode::Absolute(0) {
+                if self.source == AddresingMode::Immediate(0) {
                     return Some(EmulatedInstruction {
                         operation: EmulatedOp::Dadc,
                         data: Some(self.destination),
@@ -352,7 +393,7 @@ impl TwoOpInstruction {
                 }
             }
             TwoOp::Xor => {
-                if self.source == AddresingMode::Absolute(0xffff) {
+                if self.source == AddresingMode::Immediate(0xffff) {
                     return Some(EmulatedInstruction {
                         operation: EmulatedOp::Inv,
                         data: Some(self.destination),
@@ -361,7 +402,7 @@ impl TwoOpInstruction {
                 }
             }
             TwoOp::Cmp => {
-                if self.source == AddresingMode::Absolute(0) {
+                if self.source == AddresingMode::Immediate(0) {
                     return Some(EmulatedInstruction {
                         operation: EmulatedOp::Tst,
                         data: Some(self.destination),
@@ -375,9 +416,40 @@ impl TwoOpInstruction {
     }
 }
 
+impl fmt::Display for TwoOpInstruction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mode_string = if self.mode == DataMode::Byte {
+            ".b"
+        } else {
+            ""
+        };
+        write!(
+            f,
+            "{}{} {} {}",
+            self.operation, mode_string, self.source, self.destination
+        )
+    }
+}
+
 #[derive(Debug)]
 pub struct EmulatedInstruction {
     operation: EmulatedOp,
     data: Option<AddresingMode>,
     mode: Option<DataMode>,
+}
+
+impl fmt::Display for EmulatedInstruction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mode_string = if self.mode == Some(DataMode::Byte) {
+            ".b"
+        } else {
+            ""
+        };
+        let data_string = if let Some(actual_data) = self.data {
+            format!("{}", actual_data)
+        } else {
+            "".to_string()
+        };
+        write!(f, "{}{} {}", self.operation, mode_string, data_string)
+    }
 }

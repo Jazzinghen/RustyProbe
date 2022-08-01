@@ -84,7 +84,7 @@ pub struct OneOpInstruction {
 impl AsmInstruction for OneOpInstruction {}
 
 impl OneOpInstruction {
-    pub fn new(raw_words: &[u16; 3]) -> (Self, bool) {
+    pub fn new(raw_words: &[u16]) -> (Self, bool) {
         let operation = OneOp::try_from(raw_words[0]).unwrap();
         let mode = if operation == OneOp::Rrc || operation == OneOp::Rra || operation == OneOp::Push
         {
@@ -105,5 +105,16 @@ impl OneOpInstruction {
             },
             word_used,
         )
+    }
+}
+
+impl fmt::Display for OneOpInstruction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mode_string = if self.mode == Some(DataMode::Byte) {
+            ".b"
+        } else {
+            ""
+        };
+        write!(f, "{}{} {}", self.operation, mode_string, self.data)
     }
 }

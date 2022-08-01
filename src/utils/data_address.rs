@@ -160,7 +160,7 @@ pub trait AsmInstruction {}
 pub fn parse_address(
     register: Register,
     addr_bits: u16,
-    raw_words: &[u16; 3],
+    raw_words: &[u16],
 ) -> Result<(AddresingMode, bool), &'static str> {
     let mut extra_word_used = false;
 
@@ -211,7 +211,7 @@ pub fn get_signed_hex(src: u16) -> String {
     let signed = src as i16;
     let abs = signed.abs() as u16;
     let sign = if signed < 0 { "-" } else { "" };
-    format!("{}{:+#x}", sign, abs)
+    format!("{}{:#x}", sign, abs)
 }
 
 impl fmt::Display for AddresingMode {
@@ -225,7 +225,7 @@ impl fmt::Display for AddresingMode {
             Self::Autoincrement(reg) => write!(f, "@{}+", String::from(reg)),
             Self::Absolute(address) => write!(f, "&{:#x}", address),
             Self::Symbolic(offset) => write!(f, "{}", get_signed_hex(offset)),
-            Self::Immediate(value) => write!(f, "#{}", value as i16),
+            Self::Immediate(value) => write!(f, "#{:#x} ({})", value, value as i16),
         }
     }
 }

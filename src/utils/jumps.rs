@@ -83,7 +83,7 @@ pub struct JumpInstruction {
 }
 
 impl JumpInstruction {
-    fn new(word: u16) -> Self {
+    pub fn new(word: u16) -> Self {
         let operation = JumpOp::try_from(word).unwrap();
         let offset_bits = word & 0b1111111111u16;
         let offset = if offset_bits & 0b1000000000u16 != 0 {
@@ -100,6 +100,6 @@ impl AsmInstruction for JumpInstruction {}
 
 impl fmt::Display for JumpInstruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "({}, {})", self.operation, get_signed_hex(self.offset))
+        write!(f, "{} {}", self.operation, get_signed_hex(self.offset))
     }
 }
