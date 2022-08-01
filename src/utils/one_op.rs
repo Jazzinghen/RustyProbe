@@ -19,8 +19,8 @@ pub enum OneOp {
 impl TryFrom<u16> for OneOp {
     type Error = &'static str;
     fn try_from(value: u16) -> Result<Self, Self::Error> {
-        let op_data: u16 = value.shr(10);
-        if op_data != 0b000100 {
+        let op_data: u16 = value.shr(12);
+        if op_data != 0b0001 && op_data != 0 {
             return Err("the provided word is not a one operand op code");
         }
         let masked_data: u16 = value.shr(7) & 0b111u16;

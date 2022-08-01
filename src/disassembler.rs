@@ -44,8 +44,8 @@ fn disassemble_op(raw_words: &[u16]) -> (usize, String) {
         let jump_instruction = jumps::JumpInstruction::new(raw_words[0]);
         return (1, format!("{}", jump_instruction));
     };
-    let one_op_bits: u16 = raw_words[0].shr(10);
-    if one_op_bits == 0b000100 {
+    let one_op_bits: u16 = raw_words[0].shr(12);
+    if one_op_bits == 0b0001 || one_op_bits == 0 {
         let (one_op_instruction, extra_word) = one_op::OneOpInstruction::new(raw_words);
         return (
             if extra_word { 2 } else { 1 },
